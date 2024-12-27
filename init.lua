@@ -160,6 +160,7 @@ vim.opt.scrolloff = 10
 vim.opt.hlsearch = true
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
+vim.keymap.set('n', 'd', '"_d')
 vim.keymap.set('n', 'zW', function()
   vim.opt.foldmethod = 'indent'
 end, { desc = 'Fold Full file' })
@@ -230,6 +231,91 @@ require('lazy').setup({
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
   'tpope/vim-sleuth', -- Detect tabstop and shiftwidth automatically
 
+  {
+    'nvim-neotest/neotest',
+    dependencies = {
+      'nvim-neotest/nvim-nio',
+      'rouge8/neotest-rust',
+      'nvim-lua/plenary.nvim',
+      'antoinemadec/FixCursorHold.nvim',
+      'nvim-treesitter/nvim-treesitter',
+    },
+    config = function()
+      require('neotest').setup {
+        adapters = {
+          require 'neotest-rust', -- Load the Rust adapter
+        },
+      }
+    end,
+
+    keys = {
+      { '<leader>t', '', desc = '+test' },
+      {
+        '<leader>tt',
+        function()
+          require('neotest').run.run(vim.fn.expand '%')
+        end,
+        desc = 'Run File',
+      },
+      {
+        '<leader>tT',
+        function()
+          require('neotest').run.run(vim.uv.cwd())
+        end,
+        desc = 'Run All Test Files',
+      },
+      {
+        '<leader>tr',
+        function()
+          require('neotest').run.run()
+        end,
+        desc = 'Run Nearest',
+      },
+      {
+        '<leader>tl',
+        function()
+          require('neotest').run.run_last()
+        end,
+        desc = 'Run Last',
+      },
+      {
+        '<leader>ts',
+        function()
+          require('neotest').summary.toggle()
+        end,
+        desc = 'Toggle Summary',
+      },
+      {
+        '<leader>to',
+        function()
+          require('neotest').output.open { enter = true, auto_close = true }
+        end,
+        desc = 'Show Output',
+      },
+      {
+        '<leader>tO',
+        function()
+          require('neotest').output_panel.toggle()
+        end,
+        desc = 'Toggle Output Panel',
+      },
+      {
+        '<leader>tS',
+        function()
+          require('neotest').run.stop()
+        end,
+        desc = 'Stop',
+      },
+      {
+        '<leader>tw',
+        function()
+          require('neotest').watch.toggle(vim.fn.expand '%')
+        end,
+        desc = 'Toggle Watch',
+      },
+    },
+  },
+
   -- NOTE: Plugins can also be added by using a table,
   -- with the first argument being the link and the following
   -- keys can be used to configure plugin behavior/loading/etc.
@@ -238,7 +324,7 @@ require('lazy').setup({
   --
   --  This is equivalent to:
   --    require('Comment').setup({})
-
+  { 'github/copilot.vim' },
   -- "gc" to comment visual regions/lines
   { 'numToStr/Comment.nvim', opts = {} },
 
@@ -261,6 +347,7 @@ require('lazy').setup({
       current_line_blame = true,
     },
   },
+  { 'akinsho/git-conflict.nvim', version = '*', config = true },
 
   -- NOTE: Plugins can also be configured to run Lua code when they are loaded.
   --
@@ -568,52 +655,51 @@ require('lazy').setup({
       --  - capabilities (table): Override fields in capabilities. Can be used to disable certain LSP features.
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
-      local servers = {
-        -- clangd = {},
-        -- gopls = {},
-        -- pyright = {},
-        -- rust_analyzer = {},
-        -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
-        --
-        -- Some languages (like typescript) have entire language plugins that can be useful:
-        --    https://github.com/pmizio/typescript-tools.nvim
-        --
-        -- But for many setups, the LSP (`tsserver`) will work just fine
-        -- tsserver = {},
-        --
+      local servers =
+        {
+          clangd = {},
+          gopls = {},
+          pyright = {},
+          -- rust_analyzer = {},
+          -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
+          --
+          -- Some languages (like typescript) have entire language plugins that can be useful:
+          --    https://github.com/pmizio/typescript-tools.nvim
+          --
+          --
 
-        lua_ls = {
-          -- cmd = {...},
-          -- filetypes = { ...},
-          -- capabilities = {},
-          settings = {
-            Lua = {
-              completion = {
-                callSnippet = 'Replace',
+          lua_ls = {
+            -- cmd = {...},
+            -- filetypes = { ...},
+            -- capabilities = {},
+            settings = {
+              Lua = {
+                completion = {
+                  callSnippet = 'Replace',
+                },
+                -- You can toggle below to ignore Lua_LS's noisy `missing-fields` warnings
+                diagnostics = { disable = { 'missing-fields' } },
               },
-              -- You can toggle below to ignore Lua_LS's noisy `missing-fields` warnings
-              -- diagnostics = { disable = { 'missing-fields' } },
             },
           },
-        },
 
-        rust_analyzer = {
-          diagnostics = {
-            enable = true,
-            experimental = {
+          rust_analyzer = {
+            diagnostics = {
               enable = true,
+              experimental = {
+                enable = true,
+              },
             },
           },
+          tsserver = {},
         },
-      }
-
-      -- Ensure the servers and tools above are installed
-      --  To check the current status of installed tools and/or manually install
-      --  other tools, you can run
-      --    :Mason
-      --
-      --  You can press `g?` for help in this menu.
-      require('mason').setup()
+        -- Ensure the servers and tools above are installed
+        --  To check the current status of installed tools and/or manually install
+        --  other tools, you can run
+        --    :Mason
+        --
+        --  You can press `g?` for help in this menu.
+        require('mason').setup()
 
       -- You can add other tools here that you want Mason to install
       -- for you, so that they are available from within Neovim.
@@ -920,6 +1006,5 @@ require('lazy').setup({
     },
   },
 })
-
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
