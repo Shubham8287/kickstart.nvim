@@ -92,6 +92,13 @@ do
   -- Enable faster startup by caching compiled Lua modules
   vim.loader.enable()
 
+  -- Silence noisy deprecation warnings from plugins still using old APIs
+  local orig_deprecate = vim.deprecate
+  vim.deprecate = function(name, ...)
+    if name and name:match '^vim%.tbl_' then return end
+    return orig_deprecate(name, ...)
+  end
+
   -- Set <space> as the leader key
   -- See `:help mapleader`
   --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
@@ -110,7 +117,7 @@ do
   vim.o.number = true
   -- You can also add relative line numbers, to help with jumping.
   --  Experiment for yourself to see if you like it!
-  -- vim.o.relativenumber = true
+  vim.o.relativenumber = true
 
   -- Enable mouse mode, can be useful for resizing splits for example!
   vim.o.mouse = 'a'
@@ -179,6 +186,15 @@ do
   --  See `:help hlsearch`
   vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
+  -- Delete without yanking (black hole register)
+  vim.keymap.set('n', 'd', '"_d')
+  vim.keymap.set('n', 'D', '"_D')
+  vim.keymap.set('x', 'd', '"_d')
+  vim.keymap.set('x', 'D', '"_D')
+
+  -- Fold entire file using indent method
+  vim.keymap.set('n', 'zW', function() vim.opt.foldmethod = 'indent' end, { desc = 'Fold Full file' })
+
   -- Diagnostic Config & Keymaps
   --  See `:help vim.diagnostic.Opts`
   vim.diagnostic.config {
@@ -203,6 +219,7 @@ do
     },
   }
 
+  vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = 'Open diagnostic float' })
   vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
   -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
@@ -686,16 +703,18 @@ do
   --  See `:help lsp-config` for information about keys and how to configure
   ---@type table<string, vim.lsp.Config>
   local servers = {
-    -- clangd = {},
-    -- gopls = {},
-    -- pyright = {},
-    -- rust_analyzer = {},
-    --
-    -- Some languages (like typescript) have entire language plugins that can be useful:
-    --    https://github.com/pmizio/typescript-tools.nvim
-    --
-    -- But for many setups, the LSP (`ts_ls`) will work just fine
-    -- ts_ls = {},
+    clangd = {},
+    gopls = {},
+    pyright = {},
+    rust_analyzer = {
+      settings = {
+        ['rust-analyzer'] = {
+          cargo = {
+            features = { 'simulation' },
+          },
+        },
+      },
+    },
 
     stylua = {}, -- Used to format Lua code
 
@@ -736,7 +755,7 @@ do
 
   vim.pack.add {
     gh 'neovim/nvim-lspconfig',
-    gh 'mason-org/mason.nvim',
+    { src = gh 'mason-org/mason.nvim', version = vim.version.range 'v2.*' },
     gh 'mason-org/mason-lspconfig.nvim',
     gh 'WhoIsSethDaniel/mason-tool-installer.nvim',
   }
@@ -753,7 +772,7 @@ do
   -- You can press `g?` for help in this menu.
   local ensure_installed = vim.tbl_keys(servers or {})
   vim.list_extend(ensure_installed, {
-    -- You can add other tools here that you want Mason to install
+    'stylua',
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -774,15 +793,13 @@ do
   require('conform').setup {
     notify_on_error = false,
     format_on_save = function(bufnr)
-      -- You can specify filetypes to autoformat on save here:
-      local enabled_filetypes = {
-        -- lua = true,
-        -- python = true,
-      }
-      if enabled_filetypes[vim.bo[bufnr].filetype] then
-        return { timeout_ms = 500 }
-      else
+      -- Disable format_on_save for languages that don't
+      -- have a well standardized coding style.
+      local disable_filetypes = { c = true, cpp = true }
+      if disable_filetypes[vim.bo[bufnr].filetype] then
         return nil
+      else
+        return { timeout_ms = 500 }
       end
     end,
     default_format_opts = {
@@ -790,6 +807,7 @@ do
     },
     -- You can also specify external formatters in here.
     formatters_by_ft = {
+      lua = { 'stylua' },
       -- rust = { 'rustfmt' },
       -- Conform can also run multiple formatters sequentially
       -- python = { "isort", "black" },
@@ -896,6 +914,7 @@ do
 
   -- NOTE: You can also specify a branch or a specific commit
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
+  vim.cmd.packadd 'nvim-treesitter'
 
   -- Ensure basic parsers are installed
   local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
@@ -904,21 +923,9 @@ do
   ---@param buf integer
   ---@param language string
   local function treesitter_try_attach(buf, language)
-    -- Check if a parser exists and load it
     if not vim.treesitter.language.add(language) then return end
-    -- Enable syntax highlighting and other treesitter features
     vim.treesitter.start(buf, language)
-
-    -- Enable treesitter based folds
-    -- For more info on folds see `:help folds`
-    -- vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
-    -- vim.wo.foldmethod = 'expr'
-
-    -- Check if treesitter indentation is available for this language, and if so enable it
-    -- in case there is no indent query, the indentexpr will fallback to the vim's built in one
     local has_indent_query = vim.treesitter.query.get(language, 'indents') ~= nil
-
-    -- Enable treesitter based indentation
     if has_indent_query then vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()" end
   end
 
@@ -926,20 +933,14 @@ do
   vim.api.nvim_create_autocmd('FileType', {
     callback = function(args)
       local buf, filetype = args.buf, args.match
-
       local language = vim.treesitter.language.get_lang(filetype)
       if not language then return end
-
       local installed_parsers = require('nvim-treesitter').get_installed 'parsers'
-
       if vim.tbl_contains(installed_parsers, language) then
-        -- Enable the parser if it is already installed
         treesitter_try_attach(buf, language)
       elseif vim.tbl_contains(available_parsers, language) then
-        -- If a parser is available in `nvim-treesitter`, auto-install it and enable it after the installation is done
         require('nvim-treesitter').install(language):await(function() treesitter_try_attach(buf, language) end)
       else
-        -- Try to enable treesitter features in case the parser exists but is not available from `nvim-treesitter`
         treesitter_try_attach(buf, language)
       end
     end,
@@ -960,17 +961,15 @@ do
   --  Here are some example plugins that I've included in the Kickstart repository.
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
+  require 'kickstart.plugins.autopairs'
   -- require 'kickstart.plugins.debug'
   -- require 'kickstart.plugins.indent_line'
   -- require 'kickstart.plugins.lint'
-  -- require 'kickstart.plugins.autopairs'
   -- require 'kickstart.plugins.neo-tree'
-  -- require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
+  -- require 'kickstart.plugins.gitsigns' -- gitsigns keymaps moved to custom/plugins/gitsigns.lua
 
   -- NOTE: You can add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
-  --
-  --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- require 'custom.plugins'
+  require 'custom.plugins'
 end
 
 -- The line beneath this is called `modeline`. See `:help modeline`
